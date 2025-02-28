@@ -638,6 +638,9 @@ DokanGetMountPointList(__in PREQUEST_CONTEXT RequestContext) {
   return status;
 }
 
+//
+// 创建三个设备对象FDO
+//
 NTSTATUS
 DokanCreateGlobalDiskDevice(__in PDRIVER_OBJECT DriverObject,
                             __out PDOKAN_GLOBAL *DokanGlobal) {

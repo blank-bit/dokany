@@ -482,8 +482,8 @@ DWORD SendAndPullEventInformation(PDOKAN_IO_EVENT IoEvent,
   return 0;
 }
 
-VOID CALLBACK DispatchBatchIoCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Parameter,
-                               PTP_WORK Work) {
+VOID CALLBACK DispatchBatchIoCallback(PTP_CALLBACK_INSTANCE Instance,
+                                      PVOID Parameter, PTP_WORK Work) {
   UNREFERENCED_PARAMETER(Instance);
   UNREFERENCED_PARAMETER(Work);
 
@@ -518,7 +518,8 @@ VOID CALLBACK DispatchBatchIoCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Para
     ioBatch->DokanInstance = dokanInstance;
 
     // 1 - Send event result and pull new events.
-    DWORD error = SendAndPullEventInformation(ioEvent, ioBatch, /*ReleaseBatchBuffers=*/TRUE);
+    DWORD error = SendAndPullEventInformation(ioEvent, ioBatch,
+                                              /*ReleaseBatchBuffers=*/TRUE);
     if (error) {
       HandleProcessIoFatalError(dokanInstance, ioBatch, error);
       return;
@@ -582,8 +583,8 @@ VOID CALLBACK DispatchDedicatedIoCallback(PTP_CALLBACK_INSTANCE Instance,
 
   while (TRUE) {
     // 1 - Send possible event result and pull new events.
-    DWORD error =
-        SendAndPullEventInformation(ioEvent, ioBatch, /*ReleaseBatchBuffers=*/FALSE);
+    DWORD error = SendAndPullEventInformation(ioEvent, ioBatch,
+                                              /*ReleaseBatchBuffers=*/FALSE);
     if (error) {
       PushIoEventBuffer(ioEvent);
       HandleProcessIoFatalError(ioBatch->DokanInstance, ioBatch, error);
@@ -633,10 +634,10 @@ BOOL DOKANAPI DokanRegisterWaitForFileSystemClosed(
       dwMilliseconds, WT_EXECUTEONLYONCE);
 }
 
-BOOL DOKANAPI DokanUnregisterWaitForFileSystemClosed(
-    _In_ HANDLE WaitHandle, BOOL WaitForCallbacks) {
-  return UnregisterWaitEx(
-      WaitHandle, WaitForCallbacks ? INVALID_HANDLE_VALUE : NULL);
+BOOL DOKANAPI DokanUnregisterWaitForFileSystemClosed(_In_ HANDLE WaitHandle,
+                                                     BOOL WaitForCallbacks) {
+  return UnregisterWaitEx(WaitHandle,
+                          WaitForCallbacks ? INVALID_HANDLE_VALUE : NULL);
 }
 
 VOID DOKANAPI DokanCloseHandle(_In_ DOKAN_HANDLE DokanInstance) {
@@ -653,6 +654,7 @@ VOID DOKANAPI DokanCloseHandle(_In_ DOKAN_HANDLE DokanInstance) {
   LeaveCriticalSection(&g_InstanceCriticalSection);
 }
 
+// !!!初始化用户态服务!!!
 int DOKANAPI DokanMain(PDOKAN_OPTIONS DokanOptions,
                        PDOKAN_OPERATIONS DokanOperations) {
   DOKAN_INSTANCE *instance = NULL;
@@ -693,6 +695,7 @@ int DOKANAPI DokanCreateFileSystem(_In_ PDOKAN_OPTIONS DokanOptions,
     g_DebugMode = TRUE;
   }
 
+  // 挂载到文件夹不能使用network device
   if ((DokanOptions->Options & DOKAN_OPTION_NETWORK) &&
       !IsMountPointDriveLetter(DokanOptions->MountPoint)) {
     DokanOptions->Options &= ~DOKAN_OPTION_NETWORK;
@@ -718,15 +721,17 @@ int DOKANAPI DokanCreateFileSystem(_In_ PDOKAN_OPTIONS DokanOptions,
   }
 
   CheckAllocationUnitSectorSize(DokanOptions);
+  //创建新的dokaninstance
   dokanInstance = NewDokanInstance();
   if (!dokanInstance) {
     return DOKAN_DRIVER_INSTALL_ERROR;
   }
 
+  // 初始化dokaninstance
   dokanInstance->DokanOptions = DokanOptions;
   dokanInstance->DokanOperations = DokanOperations;
   dokanInstance->GlobalDevice =
-      CreateFile(DOKAN_GLOBAL_DEVICE_NAME,           // lpFileName
+      CreateFile(DOKAN_GLOBAL_DEVICE_NAME,           // lpFileName --> 主设备
                  0,                                  // dwDesiredAccess
                  FILE_SHARE_READ | FILE_SHARE_WRITE, // dwShareMode
                  NULL,                               // lpSecurityAttributes
@@ -758,7 +763,8 @@ int DOKANAPI DokanCreateFileSystem(_In_ PDOKAN_OPTIONS DokanOptions,
   }
 
   if (DokanOptions->UNCName != NULL) {
-    wcscpy_s(dokanInstance->UNCName, sizeof(dokanInstance->UNCName) / sizeof(WCHAR),
+    wcscpy_s(dokanInstance->UNCName,
+             sizeof(dokanInstance->UNCName) / sizeof(WCHAR),
              DokanOptions->UNCName);
   }
 
@@ -821,9 +827,8 @@ int DOKANAPI DokanCreateFileSystem(_In_ PDOKAN_OPTIONS DokanOptions,
       return DOKAN_MOUNT_ERROR;
     }
     ioEvent->DokanInstance = dokanInstance;
-    QueueIoEvent(ioEvent, allowIpcBatching
-                              ? DispatchBatchIoCallback
-                              : DispatchDedicatedIoCallback);
+    QueueIoEvent(ioEvent, allowIpcBatching ? DispatchBatchIoCallback
+                                           : DispatchDedicatedIoCallback);
   }
 
   if (!DokanMount(dokanInstance, DokanOptions)) {
@@ -845,8 +850,9 @@ int DOKANAPI DokanCreateFileSystem(_In_ PDOKAN_OPTIONS DokanOptions,
               GetLastError());
   } else {
     DWORD keepalive_bytes_returned = 0;
-    if (!DeviceIoControl(dokanInstance->KeepaliveHandle, FSCTL_ACTIVATE_KEEPALIVE,
-                         NULL, 0, NULL, 0, &keepalive_bytes_returned, NULL))
+    if (!DeviceIoControl(dokanInstance->KeepaliveHandle,
+                         FSCTL_ACTIVATE_KEEPALIVE, NULL, 0, NULL, 0,
+                         &keepalive_bytes_returned, NULL))
       DbgPrintW(L"Failed to activate keepalive handle.\n");
   }
 
@@ -862,8 +868,8 @@ int DOKANAPI DokanCreateFileSystem(_In_ PDOKAN_OPTIONS DokanOptions,
 
   // Here we should have been mounter by mountmanager thanks to
   // IOCTL_MOUNTDEV_QUERY_SUGGESTED_LINK_NAME
-  DbgPrintW(L"Dokan Information: mounted: %s -> %s\n", dokanInstance->MountPoint,
-            dokanInstance->DeviceName);
+  DbgPrintW(L"Dokan Information: mounted: %s -> %s\n",
+            dokanInstance->MountPoint, dokanInstance->DeviceName);
 
   if (DokanOperations->Mounted) {
     DOKAN_FILE_INFO fileInfo;
@@ -924,7 +930,8 @@ ULONG DispatchGetEventInformationLength(ULONG bufferSize) {
              FIELD_OFFSET(EVENT_INFORMATION, Buffer[0]) + bufferSize);
 }
 
-VOID CreateDispatchCommon(PDOKAN_IO_EVENT IoEvent, ULONG SizeOfEventInfo, BOOL UseExtraMemoryPool, BOOL ClearNonPoolBuffer) {
+VOID CreateDispatchCommon(PDOKAN_IO_EVENT IoEvent, ULONG SizeOfEventInfo,
+                          BOOL UseExtraMemoryPool, BOOL ClearNonPoolBuffer) {
   assert(IoEvent != NULL);
   assert(IoEvent->EventResult == NULL && IoEvent->EventResultSize == 0);
 
@@ -1079,6 +1086,7 @@ int DokanStart(_In_ PDOKAN_INSTANCE DokanInstance) {
   ZeroMemory(&eventStart, sizeof(EVENT_START));
   ZeroMemory(&driverInfo, sizeof(EVENT_DRIVER_INFO));
 
+  // Options初始化
   eventStart.UserVersion = DOKAN_DRIVER_VERSION;
   if (DokanInstance->DokanOptions->Options & DOKAN_OPTION_ALT_STREAM) {
     eventStart.Flags |= DOKAN_EVENT_ALTERNATIVE_STREAM_ON;
@@ -1109,7 +1117,8 @@ int DokanStart(_In_ PDOKAN_INSTANCE DokanInstance) {
   if (DokanInstance->DokanOptions->Options & DOKAN_OPTION_CASE_SENSITIVE) {
     eventStart.Flags |= DOKAN_EVENT_CASE_SENSITIVE;
   }
-  if (DokanInstance->DokanOptions->Options & DOKAN_OPTION_DISPATCH_DRIVER_LOGS) {
+  if (DokanInstance->DokanOptions->Options &
+      DOKAN_OPTION_DISPATCH_DRIVER_LOGS) {
     eventStart.Flags |= DOKAN_EVENT_DISPATCH_DRIVER_LOGS;
   }
   if (DokanInstance->DokanOptions->Options & DOKAN_OPTION_ALLOW_IPC_BATCHING) {
@@ -1121,6 +1130,7 @@ int DokanStart(_In_ PDOKAN_INSTANCE DokanInstance) {
   }
 
   if (DokanInstance->DokanOptions->VolumeSecurityDescriptorLength != 0) {
+    // 安全描述符超长
     if (DokanInstance->DokanOptions->VolumeSecurityDescriptorLength >
         VOLUME_SECURITY_DESCRIPTOR_MAX_SIZE) {
       DokanDbgPrint(
@@ -1129,6 +1139,7 @@ int DokanStart(_In_ PDOKAN_INSTANCE DokanInstance) {
           DokanInstance->DokanOptions->VolumeSecurityDescriptorLength);
       return DOKAN_START_ERROR;
     }
+
     eventStart.VolumeSecurityDescriptorLength =
         DokanInstance->DokanOptions->VolumeSecurityDescriptorLength;
     memcpy_s(eventStart.VolumeSecurityDescriptor,
@@ -1139,12 +1150,15 @@ int DokanStart(_In_ PDOKAN_INSTANCE DokanInstance) {
 
   memcpy_s(eventStart.MountPoint, sizeof(eventStart.MountPoint),
            DokanInstance->MountPoint, sizeof(DokanInstance->MountPoint));
-  memcpy_s(eventStart.UNCName, sizeof(eventStart.UNCName), DokanInstance->UNCName,
-           sizeof(DokanInstance->UNCName));
+  memcpy_s(eventStart.UNCName, sizeof(eventStart.UNCName),
+           DokanInstance->UNCName, sizeof(DokanInstance->UNCName));
 
   eventStart.IrpTimeout = DokanInstance->DokanOptions->Timeout;
   eventStart.FcbGarbageCollectionIntervalMs = 2000;
 
+  // When Sent?
+  // The I/O Manager, other operating system components, and other kernel-mode drivers send IRP_MJ_FILE_SYSTEM_CONTROL requests. 
+  // It can be sent, for example, when a user-mode application has called the Win32 DeviceIoControl function to send a file system I/O control (FSCTL) request.
   SendToDevice(DOKAN_GLOBAL_DEVICE_NAME, FSCTL_EVENT_START, &eventStart,
                sizeof(EVENT_START), &driverInfo, sizeof(EVENT_DRIVER_INFO),
                &returnedLength);
@@ -1159,12 +1173,13 @@ int DokanStart(_In_ PDOKAN_INSTANCE DokanInstance) {
                     eventStart.MountPoint);
       return DOKAN_MOUNT_ERROR;
     }
-    DokanDbgPrint("Dokan Error: driver start error\n");    
+    DokanDbgPrint("Dokan Error: driver start error\n");
     return DOKAN_START_ERROR;
   } else if (driverInfo.Status == DOKAN_MOUNTED) {
     DokanInstance->MountId = driverInfo.MountId;
     DokanInstance->DeviceNumber = driverInfo.DeviceNumber;
-    wcscpy_s(DokanInstance->DeviceName, sizeof(DokanInstance->DeviceName) / sizeof(WCHAR),
+    wcscpy_s(DokanInstance->DeviceName,
+             sizeof(DokanInstance->DeviceName) / sizeof(WCHAR),
              driverInfo.DeviceName);
     if (driverLetter && mountManager) {
       DokanInstance->MountPoint[0] = driverInfo.ActualDriveLetter;

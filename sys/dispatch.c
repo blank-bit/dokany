@@ -30,7 +30,7 @@ NTSTATUS DokanBuildRequest(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp) {
     __try {
       FsRtlEnterFileSystem();
 
-      if (!IoGetTopLevelIrp()) {
+      if (!IoGetTopLevelIrp()) {// 当前没有toplevel的IRP，设置当前IRP为toplevel
         isTopLevelIrp = TRUE;
         IoSetTopLevelIrp(Irp);
       }
