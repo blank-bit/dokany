@@ -140,6 +140,10 @@ NewDokanInstance()
             free(dokanInstance);
             return NULL;
         }
+        // 配置线程池回调环境的基础函数，通过它可以自定义线程池任务的执行环境，如关联特定的线程池、清理组或设置优先级
+        // 自定义线程池：如果任务需要在特定的线程池中执行，可以使用 InitializeThreadpoolEnvironment 初始化回调环境，并通过 SetThreadpoolCallbackPool 将其与自定义线程池关联。
+        // 清理组管理：如果需要统一管理线程池任务的清理，并通过 SetThreadpoolCallbackCleanupGroup 将其与清理组关联。
+        // 优先级设置：如果需要调整线程池任务的优先级，并通过 SetThreadpoolCallbackPriority 设置优先级。
         InitializeThreadpoolEnvironment(
             &dokanInstance->ThreadInfo.CallbackEnvironment);
         SetThreadpoolCallbackPool(&dokanInstance->ThreadInfo.CallbackEnvironment,
@@ -565,7 +569,9 @@ VOID CALLBACK DispatchBatchIoCallback(PTP_CALLBACK_INSTANCE Instance,
 
     PDOKAN_IO_EVENT ioEvent = (PDOKAN_IO_EVENT)Parameter;
     assert(ioEvent);
-    PDOKAN_INSTANCE dokanInstance = ioEvent->DokanInstance;
+    // 首次进入(由 QueueIoEvent(ioEvent, allowIpcBatching ? DispatchBatchIoCallback: DispatchDedicatedIoCallback) 进入)，
+    // 只有dokaninstance有数据，其他为空，为mainPullThread
+    PDOKAN_INSTANCE dokanInstance = ioEvent->DokanInstance; 
     PDOKAN_IO_BATCH ioBatch = NULL;
     BOOL mainPullThread = ioEvent->EventContext == NULL;
 
@@ -593,6 +599,7 @@ VOID CALLBACK DispatchBatchIoCallback(PTP_CALLBACK_INSTANCE Instance,
             }
         }
 
+        // count为0时创建IoBatch对象
         ioBatch = PopIoBatchBuffer();
         ioBatch->MainPullThread = mainPullThread;
         ioBatch->DokanInstance = dokanInstance;
@@ -884,6 +891,7 @@ int DOKANAPI DokanCreateFileSystem(_In_ PDOKAN_OPTIONS DokanOptions,
             DokanOptions->UNCName);
     }
 
+    // 创建挂载设备
     int result = DokanStart(dokanInstance);
     if (result != DOKAN_SUCCESS)
     {
@@ -891,6 +899,10 @@ int DOKANAPI DokanCreateFileSystem(_In_ PDOKAN_OPTIONS DokanOptions,
         return result;
     }
 
+    // SymbolicName is
+    // \\DosDevices\\Global\\Volume{D6CC17C5-1734-4085-BCE7-964F1E9F5DE9}
+    // Finds the last '\' and copy into DeviceName.
+    // DeviceName is \Volume{D6CC17C5-1734-4085-BCE7-964F1E9F5DE9}
     GetRawDeviceName(dokanInstance->DeviceName, rawDeviceName, MAX_PATH);
     dokanInstance->Device =
         CreateFile(rawDeviceName,                      // lpFileName
@@ -910,12 +922,24 @@ int DOKANAPI DokanCreateFileSystem(_In_ PDOKAN_OPTIONS DokanOptions,
         return DOKAN_DRIVER_INSTALL_ERROR;
     }
 
+    // 进程的处理器关联掩码（Process Affinity Mask）
     DWORD_PTR processAffinityMask;
+    // 系统的处理器关联掩码（System Affinity Mask） 
     DWORD_PTR systemAffinityMask;
     DWORD mainPullThreadCount = 0;
+    // Windows API 中用于 获取进程的处理器关联掩码（Process Affinity Mask）和系统的处理器关联掩码（System Affinity Mask） 的函数
+    // 1.查询进程可用的处理器核心：通过掩码的二进制位表示哪些逻辑处理器允许运行该进程的线程。
+    // 2.获取系统支持的处理器核心：系统掩码表示当前系统中所有可用的逻辑处理器。
+    // 3.多核环境优化：帮助开发者根据系统资源分配优化进程的 CPU 使用策略
+    // 
+    // GetProcessAffinityMask函数参数解析
+    // hProcess：目标进程的句柄，需具有 PROCESS_QUERY_INFORMATION 或 PROCESS_QUERY_LIMITED_INFORMATION 权限（Windows XP 及 Server 2003 仅支持前者）。
+    // lpProcessAffinityMask：指向接收进程关联掩码的变量。例如，掩码 0x03（二进制 0011）表示进程可使用 CPU 0 和 1。
+    // lpSystemAffinityMask：指向接收系统关联掩码的变量。例如，掩码 0x0F（二进制 1111）表示系统有 4 个可用 CPU
     if (GetProcessAffinityMask(GetCurrentProcess(), &processAffinityMask,
         &systemAffinityMask))
     {
+        // 移位判断进程可用核数
         while (processAffinityMask)
         {
             mainPullThreadCount += 1;
@@ -946,8 +970,11 @@ int DOKANAPI DokanCreateFileSystem(_In_ PDOKAN_OPTIONS DokanOptions,
         (BOOLEAN)(DokanOptions->Options & DOKAN_OPTION_ALLOW_IPC_BATCHING);
     DbgPrintW(L"Dokan: Using %d main pull threads with ipc batching: %d\n",
         mainPullThreadCount, allowIpcBatching);
+
+    // 创建与线程数相同的IOEvent用于队列处理
     for (DWORD x = 0; x < mainPullThreadCount; ++x)
     {
+        // 拿取一个新的ioevent并初始化zero
         PDOKAN_IO_EVENT ioEvent = PopIoEventBuffer();
         if (!ioEvent)
         {
@@ -1249,6 +1276,7 @@ BOOL SendGlobalReleaseIRP(LPCWSTR MountPoint)
     return FALSE;
 }
 
+// 创建挂载设备
 int DokanStart(_In_ PDOKAN_INSTANCE DokanInstance)
 {
     EVENT_START eventStart;

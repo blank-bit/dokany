@@ -1046,7 +1046,7 @@ DokanEventStart(__in PREQUEST_CONTEXT RequestContext)
         volumeSecurityDescriptor = eventStart->VolumeSecurityDescriptor;
     }
 
-    // 创建新磁盘设备
+    // 创建新磁盘设备，通过mount point区分挂载方式，不做其他特殊处理
     status = DokanCreateDiskDevice(
         RequestContext->DeviceObject->DriverObject,
         RequestContext->DokanGlobal->MountId, eventStart->MountPoint,
@@ -1109,6 +1109,7 @@ DokanEventStart(__in PREQUEST_CONTEXT RequestContext)
     }
     else if (eventStart->Flags & DOKAN_EVENT_DRIVE_LETTER_IN_USE)
     {
+        // 盘符被使用且不由当前驱动创建，保留它，尝试分配新盘符
         // The drive letter is perceived as being in use in user mode, and this
         // driver doesn't own it. In this case we explicitly ask not to use it.
         // Although we ask the mount manager to avoid clobbering existing links
@@ -1207,6 +1208,7 @@ DokanEventStart(__in PREQUEST_CONTEXT RequestContext)
     ExReleaseResourceLite(&RequestContext->DokanGlobal->Resource);
     KeLeaveCriticalRegion();
 
+    // 验证卷（Volume）的合法性 
     IoVerifyVolume(dcb->DeviceObject, FALSE);
 
     PMOUNT_ENTRY mountEntry =
@@ -1224,6 +1226,10 @@ DokanEventStart(__in PREQUEST_CONTEXT RequestContext)
 
     if (useMountManager)
     {
+        // 挂载项现在有了实际的挂载点，因为IoVerifyVolume会重新进入调用DokanMountVolume，
+        // 后者会调用DokanCreateMountPoint，DokanCreateMountPoint会重新进入发出IOCTL_MOUNTDEV_LINK_CREATED命令，并更新挂载项。
+        // 我们现在将实际的驱动器号复制到返回的信息中。我们希望它的形式是\DosDevices\G：。如果它是一个目录挂载点，则库不会使用此值。
+        // 
         // The mount entry now has the actual mount point, because IoVerifyVolume
         // re-entrantly invokes DokanMountVolume, which calls DokanCreateMountPoint,
         // which re-entrantly issues IOCTL_MOUNTDEV_LINK_CREATED, and that updates
@@ -1234,11 +1240,11 @@ DokanEventStart(__in PREQUEST_CONTEXT RequestContext)
         {
             if (!dcb->MountPointDetermined)
             {
-                // 极少发生
                 // Getting into this block is considered very rare, and we are not
                 // even sure how to achieve it naturally. It can be triggered
                 // artificially by adding an applicable deleted volume record under
                 // HKLM\System\MountedDevices.
+                // 进入这个块是非常罕见的，我们甚至不确定如何自然地实现它。它可以通过在HKLM\System\MountedDevices下添加一个适用的删除卷记录来人为触发。
                 DokanLogError(&logger, 0,
                     L"Warning: mount point creation is being forced.");
                 driverInfo->Flags |= DOKAN_DRIVER_INFO_MOUNT_FORCED;
