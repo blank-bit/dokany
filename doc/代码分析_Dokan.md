@@ -251,9 +251,7 @@ FCB分配失败 → 返回资源不足
 
 ### DeviceIoControl
 
-#### IRP_MJ_FILE_SYSTEM_CONTROL
-
-https://learn.microsoft.com/en-us/previous-versions/windows/drivers/ifs/irp-mj-file-system-control
+#### [IRP_MJ_FILE_SYSTEM_CONTROL][https://learn.microsoft.com/en-us/previous-versions/windows/drivers/ifs/irp-mj-file-system-control]
 
 ```c
 #define FSCTL_EVENT_PROCESS_N_PULL                                                     \
@@ -339,9 +337,7 @@ case IRP_MN_MOUNT_VOLUME:
 
 
 
-### **IoVerifyVolume**
-
-https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ioverifyvolume
+### [**IoVerifyVolume**][https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ioverifyvolume]
 
 **IoVerifyVolume** sends a volume verify request to the specified removable-media device identified by the device object.
 
@@ -349,6 +345,69 @@ https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-io
 - **触发挂载操作**：如果卷未挂载，`IoVerifyVolume`会触发挂载操作。这可能涉及发送`IRP_MJ_FILE_SYSTEM_CONTROL`类型的 IRP，次要功能代码为`IRP_MN_MOUNT_VOLUME`，以挂载卷。
 
 `IoVerifyVolume`会重新进入调用`DokanMountVolume`，后者会调用`DokanCreateMountPoint`，`DokanCreateMountPoint`会重新进入发出`IOCTL_MOUNTDEV_LINK_CREATED`命令，并更新挂载项。
+
+
+
+#### Mount Sequence Flow Details
+
+1. **Device Creation:**
+   - **IoCreateDeviceSecure** creates the disk device object with the provided SDDL and device extension (e.g., your DokanDCB).
+   - At this point, the disk is registered with the I/O system but remains unmounted.
+2. **Volume Verification:**
+   - **IoVerifyVolume(diskDeviceObject, FALSE)** is invoked.
+   - This causes the I/O Manager to build an IRP with the major function **IRP_MJ_DEVICE_CONTROL** and the control code **IOCTL_DISK_CHECK_VERIFY**.
+   - The **Disk Driver** processes this IOCTL to verify the media state (ensuring the disk’s media is present and unchanged).
+   - After processing, the driver completes the IRP (commonly with **STATUS_SUCCESS** if everything is normal).
+3. **Additional Disk Queries Prior to Mounting:**
+   - Once the disk media is verified, the file system (or the Mount Manager) will typically query further details about the disk before mounting. This may include:
+     - **IOCTL_DISK_GET_DRIVE_GEOMETRY**: To obtain the disk geometry (sectors, tracks, cylinders), which is essential for understanding physical disk layout.
+     - **IOCTL_DISK_GET_LENGTH_INFO**: To determine the total size (length) of the disk.
+     - **IOCTL_DISK_GET_PARTITION_INFO / IOCTL_DISK_GET_PARTITION_INFO_EX**: For partitioned disks, to retrieve partition layout and related information.
+     - **IOCTL_STORAGE_QUERY_PROPERTY**: To query storage properties (such as bus type, media type, and other device-specific characteristics).
+4. **Mount Request:**
+   - After the above queries, the Mount Manager (or the file system driver itself) issues an IRP with the minor function **IRP_MN_MOUNT_VOLUME**.
+   - The file system driver then begins the mounting process. This typically involves:
+     - Opening the disk for reading.
+     - Reading the boot sector or volume header to detect the file system type.
+     - Validating file system metadata and consistency.
+     - Creating a volume device object and attaching it to the device stack.
+     - Completing the mount IRP to signal that the volume is now accessible.
+
+```mermaid
+sequenceDiagram
+    participant FS as File System Driver
+    participant IOM as I/O Manager
+    participant Disk as Disk Driver
+    participant MM as Mount Manager
+
+    %% Device Creation
+    Note over FS,Disk: IoCreateDeviceSecure creates disk device object
+    
+    %% Step 1: Volume Verification via IoVerifyVolume
+    FS->>IOM: IoVerifyVolume(diskDeviceObject, FALSE)
+    IOM->>Disk: Create IRP with IOCTL_DISK_CHECK_VERIFY
+    Disk->>Disk: Process IOCTL_DISK_CHECK_VERIFY\n(Check media state)
+    Disk-->>IOM: Complete IRP (e.g., STATUS_SUCCESS)
+    IOM-->>FS: Return verification result
+    
+    %% Intermediate: Additional Disk Queries
+    Note over FS,Disk: File system queries disk parameters:
+    FS->>Disk: IOCTL_DISK_GET_DRIVE_GEOMETRY\n(Get disk geometry)
+    Disk-->>FS: Return drive geometry
+    FS->>Disk: IOCTL_DISK_GET_LENGTH_INFO\n(Get disk length)
+    Disk-->>FS: Return length info
+    FS->>Disk: IOCTL_DISK_GET_PARTITION_INFO[_EX]\n(Get partition info)
+    Disk-->>FS: Return partition info
+    FS->>Disk: IOCTL_STORAGE_QUERY_PROPERTY\n(Query storage properties)
+    Disk-->>FS: Return storage properties
+
+    %% Step 2: Mounting the Volume
+    MM->>FS: Issue IRP_MN_MOUNT_VOLUME (Mount request)
+    FS->>FS: Initiate mount process:\n- Open disk\n- Read boot sector\n- Validate file system metadata
+    FS->>FS: Create volume device object & attach to FS stack
+    FS-->>MM: Complete IRP_MN_MOUNT_VOLUME (mount success)
+
+```
 
 
 
@@ -434,9 +493,44 @@ https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-io
 
 
 
-### Mount Manager requests 
+### dokan.dll挂载到文件夹，设置重解析点
 
-https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/supporting-mount-manager-requests-in-a-storage-class-driver
+挂载到文件夹，由dokan.dll通知挂载`CreateMountPoint`
+
+```c
+BOOL DokanMount(PDOKAN_INSTANCE DokanInstance, PDOKAN_OPTIONS DokanOptions)
+{
+    UNREFERENCED_PARAMETER(DokanOptions);
+    if (DokanInstance->MountPoint != NULL)
+    {
+        if (!IsMountPointDriveLetter(DokanInstance->MountPoint))
+        {
+            if (DokanOptions->Options & DOKAN_OPTION_MOUNT_MANAGER)
+            {
+                return TRUE; // Kernel has already created the reparse point.
+            }
+            // Should it not also be moved to kernel ?
+            return CreateMountPoint(DokanInstance->MountPoint,
+                DokanInstance->DeviceName);
+        }
+        else
+        {
+            // Notify applications / explorer
+            DokanBroadcastLink(DokanInstance, FALSE);
+        }
+    }
+    return TRUE;
+}
+```
+
+[FSCTL_SET_REPARSE_POINT control code][https://learn.microsoft.com/en-us/windows-hardware/drivers/ifs/fsctl-set-reparse-point]
+
+[REPARSE_DATA_BUFFER structure][https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_reparse_data_buffer]
+
+### [Mount Manager requests ][https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/supporting-mount-manager-requests-in-a-storage-class-driver]
 
 
 
+
+
+[https://learn.microsoft.com/en-us/previous-versions/windows/drivers/ifs/irp-mj-file-system-control]: 

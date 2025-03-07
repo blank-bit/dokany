@@ -84,7 +84,7 @@ typedef struct _REPARSE_DATA_BUFFER
             UCHAR DataBuffer[1];
         } GenericReparseBuffer;
     } DUMMYUNIONNAME;
-} REPARSE_DATA_BUFFER, * PREPARSE_DATA_BUFFER;
+} REPARSE_DATA_BUFFER, * PREPARSE_DATA_BUFFER;/*ntifs.h 中的结构体定义：https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_reparse_data_buffer */
 #pragma warning(pop)
 
 #define REPARSE_DATA_BUFFER_HEADER_SIZE                                        \

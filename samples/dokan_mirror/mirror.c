@@ -50,6 +50,8 @@ BOOL g_CaseSensitive;
 BOOL g_HasSeSecurityPrivilege;
 BOOL g_ImpersonateCallerUser;
 
+static const WCHAR* LOG_FILE_PATH = L"D:\\Desktop\\dokan.log";
+
 static void DbgPrint(LPCWSTR format, ...) {
   if (g_DebugMode) {
     const WCHAR *outputString;
@@ -69,7 +71,19 @@ static void DbgPrint(LPCWSTR format, ...) {
     if (g_UseStdErr)
       fputws(outputString, stderr);
     else
-      OutputDebugStringW(outputString);
+    {
+        //// 输出到日志文件
+        //FILE* logFile = _wfopen(LOG_FILE_PATH, L"a, ccs=UTF-8");
+        //if (logFile)
+        //{
+        //    fwprintf(logFile, L"%s\n", outputString);
+        //    fclose(logFile);
+        //}
+        //else
+        {
+            OutputDebugStringW(outputString);  // 文件打开失败，回退到调试输出
+        }
+    }
     if (buffer)
       _freea(buffer);
     va_end(argp);
