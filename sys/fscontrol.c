@@ -932,7 +932,7 @@ NTSTATUS DokanMountVolume(__in PREQUEST_CONTEXT RequestContext)
         status = IoCreateDevice(driverObject,               // DriverObject
             sizeof(DokanVCB),           // DeviceExtensionSize
             NULL,                       // DeviceName
-            dcb->VolumeDeviceType,      // DeviceType
+            dcb->VolumeDeviceType,      // DeviceType FILE_DEVICE_DISK_FILE_SYSTEM;
             dcb->DeviceCharacteristics, // DeviceCharacteristics
             FALSE,                      // Not Exclusive
             &volDeviceObject);          // DeviceObject
@@ -943,7 +943,7 @@ NTSTATUS DokanMountVolume(__in PREQUEST_CONTEXT RequestContext)
             driverObject,               // DriverObject
             sizeof(DokanVCB),           // DeviceExtensionSize
             dcb->DiskDeviceName,        // DeviceName
-            dcb->VolumeDeviceType,      // DeviceType
+            dcb->VolumeDeviceType,      // DeviceType FILE_DEVICE_NETWORK_FILE_SYSTEM
             dcb->DeviceCharacteristics, // DeviceCharacteristics
             FALSE,                      // Not Exclusive
             &sddl,                      // Default SDDL String
@@ -1052,6 +1052,15 @@ NTSTATUS DokanMountVolume(__in PREQUEST_CONTEXT RequestContext)
                 DokanSendAutoMount(FALSE);
             }
         }
+        // invoke this function will trigger some ioctlcode to the diskdevice (dcb->DiskDeviceName)
+        // IOCTL_MOUNTDEV_QUERY_DEVICE_NAME
+        // IOCTL_MOUNTDEV_QUERY_UNIQUE_ID
+        // IOCTL_MOUNTDEV_QUERY_STABLE_GUID
+        // IOCTL_VOLUME_GET_GPT_ATTRIBUTES
+        // IOCTL_MOUNTDEV_QUERY_SUGGESTED_LINK_NAME
+        // IOCTL_VOLUME_IS_DYNAMIC
+        // IOCTL_MOUNTDEV_LINK_CREATED --> ∑÷≈‰ dcb->PersistentSymbolicLinkName =
+        //													 DokanAllocDuplicateString(&mountdevNameString);
         status = DokanSendVolumeArrivalNotification(dcb->DiskDeviceName);
         if (!NT_SUCCESS(status))
         {
@@ -1073,6 +1082,7 @@ NTSTATUS DokanMountVolume(__in PREQUEST_CONTEXT RequestContext)
         DokanCreateMountPoint(dcb);
     }
 
+    // π“‘ÿ≥…Õ¯¬Á≈Ã“™◊¢≤·UncProvider
     if (isNetworkFileSystem)
     {
         RunAsSystem(DokanRegisterUncProvider, dcb);
