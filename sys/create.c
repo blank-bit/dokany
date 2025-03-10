@@ -29,6 +29,12 @@ with this program. If not, see <http://www.gnu.org/licenses/>.
 #pragma alloc_text(PAGE, DokanCheckShareAccess)
 #endif
 
+// "System Volume Information" 文件夹是 Windows 操作系统中的一个隐藏系统文件夹，主要用于存储系统还原和卷影复制服务（Volume Shadow Copy Service）的相关信息。
+// 1. 创建时间
+// 系统安装或分区创建时：每个 NTFS 格式的分区在初始化时都会自动创建 "System Volume Information" 文件夹。
+// 启用系统还原功能时：如果用户启用了系统还原功能，该文件夹会开始存储还原点信息。
+// 2. 创建者
+// Windows 操作系统：该文件夹是由 Windows 系统自动创建的，用于管理系统还原和卷影复制服务。
 static const UNICODE_STRING systemVolumeInformationFileName =
 RTL_CONSTANT_STRING(L"\\System Volume Information");
 
@@ -431,6 +437,7 @@ Return Value:
 
     __try
     {
+        // I/O Manager 创建，详见 doc/CreateFile.md
         fileObject = RequestContext->IrpSp->FileObject;
         if (fileObject == NULL)
         {
@@ -438,6 +445,7 @@ Return Value:
             __leave;
         }
 
+        // RelatedFileObject：如果文件是相对于另一个文件打开的（如相对于某个目录），则指向该文件对象。
         relatedFileObject = fileObject->RelatedFileObject;
 
         DOKAN_LOG_FINE_IRP(

@@ -41,7 +41,7 @@ DokanShutdown();                    // 资源清理（释放设备对象、关�
 
 2. **卷验证与挂载触发**  
    - 调用 `IoVerifyVolume(dcb->DeviceObject, FALSE)` 触发卷合法性检查。  **!!!关键!!!**
-   
+
      ```mermaid
      sequenceDiagram
          participant FS as File System Driver
@@ -75,11 +75,11 @@ DokanShutdown();                    // 资源清理（释放设备对象、关�
      FS->>FS: Create volume device object & attach to FS stack
      FS-->>MM: Complete IRP_MN_MOUNT_VOLUME (mount success)
      ```
-   
+
      
-   
+
    - 此操作会进一步调用 `DokanMountVolume`，进入挂载流程，创建卷设备对象。  
-   
+
      ```mermaid
      graph TD
          A[IoVerifyVolume] --> B[调用DokanMountVolume]
@@ -104,9 +104,9 @@ DokanShutdown();                    // 资源清理（释放设备对象、关�
      style H fill:#f0f0f0,stroke:#333
      style I fill:#ffcccc,stroke:#333
      ```
-   
+
      
-   
+
 3. **挂载点创建**  
    - **目录挂载点**：  
      - 若启用 `MountManager`，通过 `FSCTL_SET_REPARSE_POINT` 设置重解析点。  
@@ -115,8 +115,18 @@ DokanShutdown();                    // 资源清理（释放设备对象、关�
      - 调用 `IoCreateSymbolicLink` 创建符号链接（例如：`\DosDevices\G:` → `\Device\DokanDisk`）。  
 
 4. **挂载完成通知**  
-   
+
    - 内核驱动更新挂载列表（`InsertMountEntry`），并回调用户态的 `Mounted` 函数，通知挂载成功。  
+
+#### **2.3 VPB**
+
+`VPB` 是 Windows 文件系统驱动中用于 **管理卷设备与文件系统关系** 的核心数据结构。它通过绑定物理卷设备与文件系统设备，确保文件系统能够正确访问和管理卷上的数据。在挂载、卸载和路径解析等操作中，`VPB` 都起着关键作用 。
+
+  **1. VPB 的作用**
+
+- **绑定卷设备与文件系统**：`VPB` 用于将 **物理卷设备**（如 `\Device\HarddiskVolume1`）与 **文件系统设备**（如 NTFS 或 FAT32 文件系统）绑定在一起。它确保文件系统能够正确管理和访问卷设备上的数据。
+- **挂载点管理**：`VPB` 是挂载点（如盘符 `C:`）与卷设备之间的桥梁。当用户访问挂载点时，Windows 对象管理器会通过 `VPB` 找到对应的文件系统设备。 
+- **卷挂载状态**：`VPB` 包含卷的挂载状态信息，如是否已挂载（`VPB_MOUNTED`）、是否被锁定（`VPB_LOCKED`）等。
 
 ---
 
@@ -145,7 +155,13 @@ NTSTATUS DokanCreateDiskDevice(...) {
 NTSTATUS DokanMountVolume(...) {
     // 创建卷设备对象（VolumeDeviceObject）
     status = IoCreateDevice(..., &volDeviceObject);
+    ...
+        
+    vpb = RequestContext->IrpSp->Parameters.MountVolume.Vpb;
+    DokanInitVpb(vpb, vcb->DeviceObject);
     
+    ...
+        
     if (dcb->UseMountManager) {
         // 禁用AutoMount以避免驱动器号冲突
         DokanSendAutoMount(FALSE);
@@ -161,6 +177,24 @@ NTSTATUS DokanMountVolume(...) {
     ...
 }
 ```
+
+#### **3.3 DokanInitVpb（内核态）**
+
+```c
+VOID DokanInitVpb(__in PVPB Vpb, __in PDEVICE_OBJECT VolumeDevice)
+{
+    if (Vpb != NULL)
+    {
+        Vpb->DeviceObject = VolumeDevice;
+        Vpb->VolumeLabelLength = (USHORT)wcslen(VOLUME_LABEL) * sizeof(WCHAR);
+        RtlStringCchCopyW(Vpb->VolumeLabel,
+            sizeof(Vpb->VolumeLabel) / sizeof(WCHAR), VOLUME_LABEL);
+        Vpb->SerialNumber = 0x19831116;
+    }
+}
+```
+
+
 
 ---
 
