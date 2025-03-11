@@ -534,6 +534,8 @@ NTSTATUS PullEvents(__in PREQUEST_CONTEXT RequestContext,
         // the work queue; it will have to go in a different buffer.
         if (currentIoctlBufferBytesRemaining < workItemBytes)
         {
+            // 输出缓冲区剩余空间不足，将事件项重新插入队列尾部，并标记alreadySeenWorkItem。
+            // 若再次遇到该事件项，说明已遍历整个队列，退出循环。
             InsertTailList(&NotifyEvent->ListHead, &workItem->ListEntry);
             if (alreadySeenWorkItem == workItem)
             {

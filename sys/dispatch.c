@@ -152,6 +152,7 @@ DokanDispatchRequest(__in PDEVICE_OBJECT DeviceObject, __in PIRP Irp,
     NTSTATUS status = STATUS_DRIVER_INTERNAL_ERROR;
     REQUEST_CONTEXT requestContext;
 
+    // 获取上下文
     NTSTATUS buildRequestStatus = DokanBuildRequestContext(
         DeviceObject, Irp, IsTopLevelIrp, &requestContext);
     if (!NT_SUCCESS(buildRequestStatus))

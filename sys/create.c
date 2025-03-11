@@ -681,6 +681,7 @@ Return Value:
             __leave;
         }
 
+        // 构建fileName
         if (relatedFileName != NULL && !alternateDataStreamOfRootDir)
         {
             DOKAN_LOG_FINE_IRP(RequestContext, "RelatedFileName=\"%wZ\"", relatedFileName);
@@ -764,6 +765,8 @@ Return Value:
         }
         if (allocateCcb)
         {
+            // SL_OPEN_TARGET_DIRECTORY 是 Windows 文件系统驱动中用于处理 IRP_MJ_CREATE 请求的一个标志位，
+            // 主要用于在文件系统操作中检查目标文件所在的目录是否允许某些特定操作，例如文件创建或删除
             // Allocate an FCB or find one in the open list.
             if (RequestContext->IrpSp->Flags & SL_OPEN_TARGET_DIRECTORY)
             {

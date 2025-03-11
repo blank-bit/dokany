@@ -599,7 +599,7 @@ VOID CALLBACK DispatchBatchIoCallback(PTP_CALLBACK_INSTANCE Instance,
             }
         }
 
-        // count为0时创建IoBatch对象
+        // Only MainPullThread will coming here
         ioBatch = PopIoBatchBuffer();
         ioBatch->MainPullThread = mainPullThread;
         ioBatch->DokanInstance = dokanInstance;

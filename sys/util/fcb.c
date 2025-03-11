@@ -130,6 +130,7 @@ PDokanFCB DokanGetFCB(__in PREQUEST_CONTEXT RequestContext,
     DokanVCBLockRW(RequestContext->Vcb);
 
     BOOLEAN newElement = FALSE;
+    // »ñÈ¡FCBÄÚ´æ¿é
     PDokanFCB fcb = GetOrCreateUninitializedFcb(RequestContext, &fn, &newElement);
     if (!fcb)
     {
@@ -144,6 +145,7 @@ PDokanFCB DokanGetFCB(__in PREQUEST_CONTEXT RequestContext,
     {
         DOKAN_LOG_FINE_IRP(RequestContext, "New FCB %p allocated for %wZ", fcb,
             &fcb->FileName);
+        // InitializeFcb
         if (!DokanInitializeFcb(RequestContext, fcb))
         {
             BOOLEAN removed =
