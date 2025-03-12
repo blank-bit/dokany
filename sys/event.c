@@ -410,6 +410,7 @@ void DokanDispatchCompletion(__in PDEVICE_OBJECT DeviceObject,
 
     switch (irpEntry->RequestContext.IrpSp->MajorFunction)
     {
+        // eventInfo return from user land dll
     case IRP_MJ_DIRECTORY_CONTROL:
         DokanCompleteDirectoryControl(&irpEntry->RequestContext, eventInfo);
         break;
@@ -511,6 +512,7 @@ DokanCompleteIrp(__in PREQUEST_CONTEXT RequestContext)
 
     InitializeListHead(&completeList);
 
+    // Spin Lock when traverse the list
     ASSERT(KeGetCurrentIrql() <= DISPATCH_LEVEL);
     KeAcquireSpinLock(&RequestContext->Dcb->PendingIrp.ListLock, &oldIrql);
 
@@ -522,7 +524,8 @@ DokanCompleteIrp(__in PREQUEST_CONTEXT RequestContext)
         nextEntry = thisEntry->Flink;
         irpEntry = CONTAINING_RECORD(thisEntry, IRP_ENTRY, ListEntry);
         eventInfo = (PEVENT_INFORMATION)(buffer + offset);
-        if (eventInfo->SerialNumber < lastSerialNumber)
+
+        if (eventInfo->SerialNumber < lastSerialNumber) // SerialNumber < 0
         {
             // This would be a coding error in the DLL.
             result = DokanLogError(&logger, STATUS_INVALID_PARAMETER,
@@ -530,12 +533,16 @@ DokanCompleteIrp(__in PREQUEST_CONTEXT RequestContext)
             badUsageByCaller = TRUE;
             break;
         }
+
         lastSerialNumber = eventInfo->SerialNumber;
+        // find the same SerialNumber from pending IRP list
         if (irpEntry->SerialNumber != eventInfo->SerialNumber)
         {
             continue;
         }
+
         RemoveEntryList(thisEntry);
+
         if (irpEntry->RequestContext.Irp == NULL)
         {
             // This IRP is already canceled; just discard it.
@@ -557,8 +564,10 @@ DokanCompleteIrp(__in PREQUEST_CONTEXT RequestContext)
                 .DriverContext[DRIVER_CONTEXT_IRP_ENTRY] = NULL;
             InsertTailList(&completeList, thisEntry);
         }
+
         offset += GetEventInfoSize(irpEntry->RequestContext.IrpSp->MajorFunction,
             eventInfo);
+
         // Everything through offset - 1 must be readable by the completion function
         // that receives the EVENT_INFORMATION object.
         if (offset > bufferLength)
@@ -569,6 +578,7 @@ DokanCompleteIrp(__in PREQUEST_CONTEXT RequestContext)
             badUsageByCaller = TRUE;
             break;
         }
+
         // Batching is currently not allowed for buffer overflow replies, and the
         // checks below don't work for them. Essentially, if user mode populated a
         // partial object, it has no way of indicating the real size of that
@@ -578,6 +588,7 @@ DokanCompleteIrp(__in PREQUEST_CONTEXT RequestContext)
         {
             break;
         }
+
         // Don't loop if batching is not enabled; there should only be one reply at
         // a time in that case.
         if (!RequestContext->Dcb->AllowIpcBatching)
@@ -591,11 +602,13 @@ DokanCompleteIrp(__in PREQUEST_CONTEXT RequestContext)
             }
             break;
         }
+
         // Don't loop if this is the last reply in the batch.
         if (offset == bufferLength)
         {
             break;
         }
+
         // Don't loop if the next thing in the batch is a fragment of an
         // EVENT_INFORMATION object.
         if (offset + sizeof(EVENT_INFORMATION) > bufferLength)
@@ -605,6 +618,7 @@ DokanCompleteIrp(__in PREQUEST_CONTEXT RequestContext)
             break;
         }
     }
+
     KeReleaseSpinLock(&RequestContext->Dcb->PendingIrp.ListLock, oldIrql);
     offset = 0;
     eventInfo = NULL;
@@ -612,6 +626,7 @@ DokanCompleteIrp(__in PREQUEST_CONTEXT RequestContext)
     {
         DokanLogInfo(&logger, L"Warning: no matching IRPs found for reply.");
     }
+
     while (!IsListEmpty(&completeList))
     {
         listHead = RemoveHeadList(&completeList);
@@ -620,6 +635,7 @@ DokanCompleteIrp(__in PREQUEST_CONTEXT RequestContext)
             DOKAN_LOG_FINE_IRP(RequestContext, "Volume is not mounted second check");
             return STATUS_NO_SUCH_DEVICE;
         }
+
         irpEntry = CONTAINING_RECORD(listHead, IRP_ENTRY, ListEntry);
         if (offset >= bufferLength)
         {
@@ -632,6 +648,7 @@ DokanCompleteIrp(__in PREQUEST_CONTEXT RequestContext)
             eventInfo = (PEVENT_INFORMATION)(buffer + offset);
             eventInfoSize = GetEventInfoSize(
                 irpEntry->RequestContext.IrpSp->MajorFunction, eventInfo);
+            // dispatch to deal completion
             DokanDispatchCompletion(RequestContext->DeviceObject, irpEntry,
                 eventInfo);
             offset += eventInfoSize;
@@ -639,6 +656,7 @@ DokanCompleteIrp(__in PREQUEST_CONTEXT RequestContext)
         DokanFreeIrpEntry(irpEntry);
         irpEntry = NULL;
     }
+
     if (badUsageByCaller)
     {
         // This flag should only be set if there is a coding error in the DLL.
@@ -647,6 +665,7 @@ DokanCompleteIrp(__in PREQUEST_CONTEXT RequestContext)
             L"Unmounting to avoid hanging requests due to incorrect usage.");
         DokanUnmount(RequestContext, RequestContext->Dcb);
     }
+
     return result;
 }
 

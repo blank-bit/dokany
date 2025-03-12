@@ -511,8 +511,9 @@ DWORD SendAndPullEventInformation(PDOKAN_IO_EVENT IoEvent,
         inputBuffer = (PCHAR)eventInfo;
         eventInfoSize =
             GetEventInfoSize(IoEvent->EventContext->MajorFunction, eventInfo);
+        // if is not the main pull thread, set timeout then the thread will be terminate when driver not more irps
         eventInfo->PullEventTimeoutMs =
-            IoBatch->MainPullThread ? /*infinite*/ 0 : DOKAN_PULL_EVENT_TIMEOUT_MS;
+            IoBatch->MainPullThread ? /*infinite*/ 0 : DOKAN_PULL_EVENT_TIMEOUT_MS; 
         if (ReleaseBatchBuffers)
         {
             PushIoBatchBuffer(IoEvent->IoBatch);
@@ -571,7 +572,7 @@ VOID CALLBACK DispatchBatchIoCallback(PTP_CALLBACK_INSTANCE Instance,
     assert(ioEvent);
     // 首次进入(由 QueueIoEvent(ioEvent, allowIpcBatching ? DispatchBatchIoCallback: DispatchDedicatedIoCallback) 进入)，
     // 只有dokaninstance有数据，其他为空，为mainPullThread
-    PDOKAN_INSTANCE dokanInstance = ioEvent->DokanInstance; 
+    PDOKAN_INSTANCE dokanInstance = ioEvent->DokanInstance;
     PDOKAN_IO_BATCH ioBatch = NULL;
     BOOL mainPullThread = ioEvent->EventContext == NULL;
 
@@ -1172,6 +1173,7 @@ VOID ReleaseDokanOpenInfo(PDOKAN_IO_EVENT IoEvent)
     {
         return;
     }
+
     EnterCriticalSection(&IoEvent->DokanOpenInfo->CriticalSection);
     IoEvent->DokanOpenInfo->UserContext = IoEvent->DokanFileInfo.Context;
     IoEvent->DokanOpenInfo->OpenCount--;
@@ -1182,6 +1184,7 @@ VOID ReleaseDokanOpenInfo(PDOKAN_IO_EVENT IoEvent)
         IoEvent->DokanOpenInfo->CloseUserContext = IoEvent->DokanFileInfo.Context;
         IoEvent->DokanOpenInfo->OpenCount--;
     }
+
     if (IoEvent->DokanOpenInfo->OpenCount > 0)
     {
         // We are still waiting for the Close event or there is another event running. We delay the Close event.
@@ -1200,11 +1203,13 @@ VOID ReleaseDokanOpenInfo(PDOKAN_IO_EVENT IoEvent)
     LeaveCriticalSection(&IoEvent->DokanOpenInfo->CriticalSection);
     PushFileOpenInfo(IoEvent->DokanOpenInfo);
     IoEvent->DokanOpenInfo = NULL;
+
     if (IoEvent->EventResult)
     {
         // Reset the Kernel UserContext if we can. Close events do not have one.
         IoEvent->EventResult->Context = 0;
     }
+
     if (fileNameForClose)
     {
         if (IoEvent->DokanInstance->DokanOperations->CloseFile)

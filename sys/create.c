@@ -437,7 +437,7 @@ Return Value:
 
     __try
     {
-        // I/O Manager 创建，详见 doc/CreateFile.md
+        // I/O Manager 创建，详见 doc/Create相关结构详解.md
         fileObject = RequestContext->IrpSp->FileObject;
         if (fileObject == NULL)
         {

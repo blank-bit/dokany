@@ -184,7 +184,7 @@ VOID DispatchCreate(PDOKAN_IO_EVENT IoEvent)
         }
 
         if (lastP)
-        {
+        { 
             *lastP = 0;
         }
 
@@ -203,19 +203,25 @@ VOID DispatchCreate(PDOKAN_IO_EVENT IoEvent)
 
         SetIOSecurityContext(IoEvent->EventContext, &ioSecurityContext);
 
+        // SL_OPEN_TARGET_DIRECTORY 指示系统在打开目标文件时，应同时打开其所在的目录
         if ((IoEvent->EventContext->Flags & SL_OPEN_TARGET_DIRECTORY) &&
             IoEvent->DokanInstance->DokanOperations->Cleanup &&
             IoEvent->DokanInstance->DokanOperations->CloseFile)
         {
 
             if (options & FILE_NON_DIRECTORY_FILE && options & FILE_DIRECTORY_FILE)
+            {
                 status = STATUS_INVALID_PARAMETER;
+            }
             else
+            {
+                // call user CreateFile
                 status = IoEvent->DokanInstance->DokanOperations->ZwCreateFile(
                     origFileName, &ioSecurityContext, ioSecurityContext.DesiredAccess,
                     IoEvent->EventContext->Operation.Create.FileAttributes,
                     IoEvent->EventContext->Operation.Create.ShareAccess, disposition,
                     origOptions, &IoEvent->DokanFileInfo);
+            }
 
             if (CreateSuccesStatusCheck(status, disposition))
             {
@@ -233,13 +239,18 @@ VOID DispatchCreate(PDOKAN_IO_EVENT IoEvent)
         }
 
         if (options & FILE_NON_DIRECTORY_FILE && options & FILE_DIRECTORY_FILE)
+        {
             status = STATUS_INVALID_PARAMETER;
+        }
         else
+        {
+            // call user CreateFile
             status = IoEvent->DokanInstance->DokanOperations->ZwCreateFile(
                 fileName, &ioSecurityContext, ioSecurityContext.DesiredAccess,
                 IoEvent->EventContext->Operation.Create.FileAttributes,
                 IoEvent->EventContext->Operation.Create.ShareAccess, disposition,
                 options, &IoEvent->DokanFileInfo);
+        }
 
         if (CreateSuccesStatusCheck(status, disposition)
             && !childExisted)

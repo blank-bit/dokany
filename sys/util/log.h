@@ -32,17 +32,19 @@ with this program. If not, see <http://www.gnu.org/licenses/>.
 // Whether DbgPrint is enabled or not.
 extern ULONG g_Debug;
 
-typedef struct _DOKAN_LOG_ENTRY {
-  LIST_ENTRY ListEntry;
-  PVOID Vcb;
-  DOKAN_LOG_MESSAGE Log;
-} DOKAN_LOG_ENTRY, *PDOKAN_LOG_ENTRY;
+typedef struct _DOKAN_LOG_ENTRY
+{
+    LIST_ENTRY ListEntry;
+    PVOID Vcb;
+    DOKAN_LOG_MESSAGE Log;
+} DOKAN_LOG_ENTRY, * PDOKAN_LOG_ENTRY;
 
-typedef struct _DOKAN_LOG_CACHE {
-  LONG NumberOfCachedEntries;
-  ERESOURCE Resource;
-  LIST_ENTRY Log;
-} DOKAN_LOG_CACHE, *PDOKAN_LOG_CACHE;
+typedef struct _DOKAN_LOG_CACHE
+{
+    LONG NumberOfCachedEntries;
+    ERESOURCE Resource;
+    LIST_ENTRY Log;
+} DOKAN_LOG_CACHE, * PDOKAN_LOG_CACHE;
 
 // Global cache for driver global and specific volume logs.
 extern DOKAN_LOG_CACHE g_DokanLogEntryList;
@@ -202,7 +204,7 @@ VOID IncrementVcbLogCacheCount();
 // Return the NTSTATUS define string name.
 PCHAR DokanGetNTSTATUSStr(NTSTATUS Status);
 // Return Identifier Type string name.
-PCHAR DokanGetIdTypeStr(__in VOID *Id);
+PCHAR DokanGetIdTypeStr(__in VOID* Id);
 // Return IRP Major function string name.
 PCHAR DokanGetMajorFunctionStr(UCHAR MajorFunction);
 // Return IRP Minor function string name.
@@ -218,11 +220,12 @@ PCHAR DokanGetCreateInformationStr(ULONG_PTR Information);
 // Return IOCTL string name.
 PCHAR DokanGetIoctlStr(ULONG ControlCode);
 
-typedef struct _DOKAN_LOGGER {
-  PDRIVER_OBJECT DriverObject;
-  UCHAR MajorFunctionCode;
+typedef struct _DOKAN_LOGGER
+{
+    PDRIVER_OBJECT DriverObject;
+    UCHAR MajorFunctionCode;
 
-} DOKAN_LOGGER, *PDOKAN_LOGGER;
+} DOKAN_LOGGER, * PDOKAN_LOGGER;
 
 #define DOKAN_INIT_LOGGER(logger, driverObject, majorFunctionCode) \
   DOKAN_LOGGER logger;                                             \
@@ -238,19 +241,20 @@ NTSTATUS DokanLogError(__in PDOKAN_LOGGER Logger, __in NTSTATUS Status,
 VOID DokanLogInfo(__in PDOKAN_LOGGER Logger, __in LPCTSTR Format, ...);
 
 // A compact stack trace that can be easily logged.
-typedef struct _DokanBackTrace {
-  // The full address of a point-of-reference instruction near where the logging
-  // occurs. One should be able to find this instruction in the disassembly of
-  // the driver by seeing the log message content aside from this value. This
-  // value then tells you the absolute address of that instruction at runtime.
-  ULONG64 Address;
+typedef struct _DokanBackTrace
+{
+    // The full address of a point-of-reference instruction near where the logging
+    // occurs. One should be able to find this instruction in the disassembly of
+    // the driver by seeing the log message content aside from this value. This
+    // value then tells you the absolute address of that instruction at runtime.
+    ULONG64 Address;
 
-  // Three return addresses truncated to their lowest 20 bits. The lowest 20
-  // bits of this value is the most distant return address, the next 20 bits are
-  // the next frame up, etc. To find each of the 3 instructions referenced here,
-  // one replaces the lowest 20 bits of Ip.
-  ULONG64 ReturnAddresses;
-} DokanBackTrace, *PDokanBackTrace;
+    // Three return addresses truncated to their lowest 20 bits. The lowest 20
+    // bits of this value is the most distant return address, the next 20 bits are
+    // the next frame up, etc. To find each of the 3 instructions referenced here,
+    // one replaces the lowest 20 bits of Ip.
+    ULONG64 ReturnAddresses;
+} DokanBackTrace, * PDokanBackTrace;
 
 // Captures a trace where Address is the full address of the call site
 // instruction after the DokanCaptureBackTrace call, and ReturnAddresses
